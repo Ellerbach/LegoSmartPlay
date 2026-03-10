@@ -2,6 +2,9 @@
 
 A fun project aiming to recreate the functionality of the LEGO® Smart Play™ smart brick using .NET nanoFramework and off-the-shelf hardware.
 
+![Hardware setup](docs/hardware-setup-raw.jpg)
+ESP32-C3, PN5180 NFC reader, TCS3472x colour sensor, YX5300 MP3 player
+
 > **🚧 This project is in early development and will evolve significantly over time.** APIs, hardware choices, and documentation may change without notice. Contributions and ideas are welcome!
 
 ## What is LEGO Smart Play?
