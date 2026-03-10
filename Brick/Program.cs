@@ -35,9 +35,10 @@ namespace LegoSmartBrick.Brick
         private const byte LegoFormatVersion = 0x01;
         private const byte LegoCardTypeMarker = 0x0C;
 
-        // Colour-triggered sound track numbers (folder 01 on the SD card).
+        // Colour-triggered sound track numbers (folder 99 on the SD card).
         private const byte ColorTrackBlueWater = 255;
         private const byte ColorTrackGreenTools = 254;
+        private const byte ColorTrackRedLaser = 253;
 
         // Tracks the last colour that triggered a sound, to avoid repeating.
         private static string _lastColorSound = string.Empty;
@@ -364,6 +365,11 @@ namespace LegoSmartBrick.Brick
                 {
                     Debug.WriteLine($"  Playing tools sound (track {ColorTrackGreenTools})...");
                     mp3Player.PlaySpecific(99, ColorTrackGreenTools);
+                }
+                else if (name == "Red" && mp3Player != null)
+                {
+                    Debug.WriteLine($"  Playing laser blast (track {ColorTrackRedLaser})...");
+                    mp3Player.PlaySpecific(99, ColorTrackRedLaser);
                 }
             }
         }
