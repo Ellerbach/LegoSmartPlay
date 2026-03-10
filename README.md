@@ -192,10 +192,10 @@ The Brick ID byte value is used directly as the track number in folder `01`. Nam
 | `/01/158.mp3` | `0x9E` | 158 | Princess Leia |
 | `/01/169.mp3` | `0xA9` | 169 | Darth Vader |
 | `/01/171.mp3` | `0xAB` | 171 | Emperor Palpatine |
-| `/01/254.mp3` | — | 254 | Green colour → Tools / repair |
-| `/01/255.mp3` | — | 255 | Blue colour → Water filling tank |
+| `/99/254.mp3` | — | 254 | Green colour → Tools / repair |
+| `/99/255.mp3` | — | 255 | Blue colour → Water filling tank |
 
-To add a sound for a new Brick ID, just place an MP3 file named with its decimal value in folder `01`. No code changes needed. Tracks 254 and 255 are reserved for colour-triggered sound effects.
+To add a sound for a new Brick ID, just place an MP3 file named with its decimal value in folder `01`. No code changes needed. On folder `99`, tracks 254 and 255 are reserved for colour-triggered sound effects.
 
 > The SPI, I2C and UART pins are configured via ESP32 pin muxing (`Configuration.SetPinFunction`). The PN5180 reset pin is toggled manually before driver initialisation. BUSY and NSS are managed by the PN5180 driver.
 
