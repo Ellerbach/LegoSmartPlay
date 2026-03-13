@@ -154,6 +154,18 @@ The `Ble/` project turns an ESP32 into a BLE device that mimics the official LEG
 
 Full protocol documentation: [docs/ble-details.md](docs/ble-details.md)
 
+### Adding the Brick in the LEGO App
+
+The screenshots below show the step-by-step flow when the LEGO companion app discovers and connects to our emulated Smart Brick:
+
+| Step 1 — Discovery | Step 2 — Connecting | Step 3 — Pairing |
+|:---:|:---:|:---:|
+| ![Step 1](docs/ble-step1.jpeg) | ![Step 2](docs/ble-step2.jpeg) | ![Step 3](docs/ble-step3.jpeg) |
+
+| Step 4 — Firmware check | Step 5 — Ownership | Step 6 — Result |
+|:---:|:---:|:---:|
+| ![Step 4](docs/ble-step4.jpeg) | ![Step 5](docs/ble-step5.jpeg) | ![Step 6](docs/ble-step6.jpeg) |
+
 ## Project Structure
 
 ```text
