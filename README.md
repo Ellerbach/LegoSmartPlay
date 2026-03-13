@@ -145,6 +145,16 @@ The `Ble/` project turns an ESP32 into a BLE device that mimics the official LEG
 - Simulated battery charging (starts at 20%, charges over time).
 - Authentication challenge/response (ECDSA P-256) is implemented with a developer bypass mode.
 - Ownership proof protocol is handled (nonce generation, claim acknowledgement).
+- WDX file list metadata (Firmware, FaultLog, Telemetry) on FTC/FTD characteristics.
+
+**Extended mode (`EnableExtendedServices = true`, ESP32-S3):**
+
+On boards with more BLE heap, additional features match the real brick more closely:
+
+- Device Information Service (0x180A) with LEGO / Smart Brick / 2.29.2 values.
+- Secondary LEGO service (3ff2) with bidirectional characteristic.
+- FC96 service data in BLE advertisement.
+- Readable WDX characteristics with pre-populated static values.
 
 **What doesn't work (by design):**
 

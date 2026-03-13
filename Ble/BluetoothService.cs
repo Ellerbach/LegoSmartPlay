@@ -30,15 +30,24 @@ namespace LegoSmartBrick.Ble
         private static GattLocalCharacteristic _ftdCharacteristic;
         private static GattLocalCharacteristic _auCharacteristic;
 
+        // When true, FTC/FTD send file list metadata on subscription
+        // and DC sends battery level UPDATE alongside ConnParam.
+        private static bool _extendedServices;
+
         /// <summary>
         /// Initialises the BLE stack, creates the WDX GATT service with all
         /// four characteristics, hooks up write handlers, and starts advertising
         /// as "Smart Brick" with the WDX service UUID (0xFEF6).
         /// </summary>
+        /// <param name="extendedServices">When true, creates additional GATT
+        /// services (DIS, secondary LEGO service) and FC96 advertisement data.
+        /// Requires more BLE heap (ESP32-S3 or similar). Set to false for
+        /// ESP32 WROOM-32 which OOMs with the extra services.</param>
         /// <returns>True if BLE advertising started successfully.</returns>
-        public static bool Init()
+        public static bool Init(bool extendedServices = false)
         {
             Debug.WriteLine("BLE: Initialising Bluetooth...");
+            _extendedServices = extendedServices;
 
             try
             {
@@ -63,48 +72,139 @@ namespace LegoSmartBrick.Ble
                 GattLocalService service = _serviceProvider.Service;
 
                 // --- DC — Device Configuration (Write + Notify) ---
-                _dcCharacteristic = CreateCharacteristic(
-                    service,
-                    BleConstants.DcUuid,
-                    "Device Configuration",
-                    GattCharacteristicProperties.Write | GattCharacteristicProperties.Notify);
+                if (extendedServices)
+                {
+                    // Extended: DC static value = UPDATE BatteryLevel (matches real brick)
+                    byte[] dcStatic = new byte[] {
+                        BleConstants.DcOpUpdate, BleConstants.DcIdBatteryLevel, WdxRegisters.BatteryLevel
+                    };
+                    _dcCharacteristic = CreateCharacteristic(
+                        service,
+                        BleConstants.DcUuid,
+                        "Device Configuration",
+                        GattCharacteristicProperties.Read | GattCharacteristicProperties.Write | GattCharacteristicProperties.Notify,
+                        dcStatic);
+                }
+                else
+                {
+                    _dcCharacteristic = CreateCharacteristic(
+                        service,
+                        BleConstants.DcUuid,
+                        "Device Configuration",
+                        GattCharacteristicProperties.Write | GattCharacteristicProperties.Notify);
+                }
 
                 if (_dcCharacteristic == null) return false;
 
                 // --- FTC — File Transfer Control (WriteWithoutResponse + Notify) ---
-                _ftcCharacteristic = CreateCharacteristic(
-                    service,
-                    BleConstants.FtcUuid,
-                    "File Transfer Control",
-                    GattCharacteristicProperties.WriteWithoutResponse | GattCharacteristicProperties.Notify);
+                if (extendedServices)
+                {
+                    // Extended: FTC static value = file list header (3 files)
+                    byte[] ftcStatic = new byte[] { 0x06, 0x03, 0x00, 0x00 };
+                    _ftcCharacteristic = CreateCharacteristic(
+                        service,
+                        BleConstants.FtcUuid,
+                        "File Transfer Control",
+                        GattCharacteristicProperties.Read | GattCharacteristicProperties.WriteWithoutResponse | GattCharacteristicProperties.Notify,
+                        ftcStatic);
+                }
+                else
+                {
+                    _ftcCharacteristic = CreateCharacteristic(
+                        service,
+                        BleConstants.FtcUuid,
+                        "File Transfer Control",
+                        GattCharacteristicProperties.WriteWithoutResponse | GattCharacteristicProperties.Notify);
+                }
 
                 if (_ftcCharacteristic == null) return false;
 
                 // --- FTD — File Transfer Data (WriteWithoutResponse + Notify) ---
-                _ftdCharacteristic = CreateCharacteristic(
-                    service,
-                    BleConstants.FtdUuid,
-                    "File Transfer Data",
-                    GattCharacteristicProperties.WriteWithoutResponse | GattCharacteristicProperties.Notify);
+                if (extendedServices)
+                {
+                    // Extended: FTD static value = WDX file list (Firmware, FaultLog, Telemetry)
+                    byte[] ftdStatic = BuildWdxFileList();
+                    _ftdCharacteristic = CreateCharacteristic(
+                        service,
+                        BleConstants.FtdUuid,
+                        "File Transfer Data",
+                        GattCharacteristicProperties.Read | GattCharacteristicProperties.WriteWithoutResponse | GattCharacteristicProperties.Notify,
+                        ftdStatic);
+                }
+                else
+                {
+                    _ftdCharacteristic = CreateCharacteristic(
+                        service,
+                        BleConstants.FtdUuid,
+                        "File Transfer Data",
+                        GattCharacteristicProperties.WriteWithoutResponse | GattCharacteristicProperties.Notify);
+                }
 
                 if (_ftdCharacteristic == null) return false;
 
                 // --- AU — Authentication (Write + Notify) ---
-                _auCharacteristic = CreateCharacteristic(
-                    service,
-                    BleConstants.AuUuid,
-                    "Authentication",
-                    GattCharacteristicProperties.Write | GattCharacteristicProperties.Notify);
+                if (extendedServices)
+                {
+                    _auCharacteristic = CreateCharacteristic(
+                        service,
+                        BleConstants.AuUuid,
+                        "Authentication",
+                        GattCharacteristicProperties.Read | GattCharacteristicProperties.Write | GattCharacteristicProperties.Notify);
+                }
+                else
+                {
+                    _auCharacteristic = CreateCharacteristic(
+                        service,
+                        BleConstants.AuUuid,
+                        "Authentication",
+                        GattCharacteristicProperties.Write | GattCharacteristicProperties.Notify);
+                }
 
                 if (_auCharacteristic == null) return false;
 
                 Debug.WriteLine("BLE: WDX service created with DC, FTC, FTD, AU characteristics.");
 
-                // NOTE: Device Information Service (0x180A) removed — adding a
-                // second GattServiceProvider with 4 characteristics exceeds the
-                // ESP32 BLE heap and causes OOM / invisible advertisement.
-                // The nanoFramework default DIS ("nanoFramework"/"ESP32") remains.
-                // The LEGO app reads model/manufacturer/firmware from DC registers.
+                // --- Extended services (ESP32-S3 and boards with more BLE heap) ---
+                if (extendedServices)
+                {
+                    // Device Information Service (0x180A) — overrides the default
+                    // nanoFramework DIS ("nanoFramework"/"ESP32") with LEGO values.
+                    GattServiceProviderResult disResult = GattServiceProvider.Create(BleConstants.DeviceInfoServiceUuid);
+                    if (disResult.Error == BluetoothError.Success)
+                    {
+                        GattLocalService dis = disResult.ServiceProvider.Service;
+                        CreateReadOnlyCharacteristic(dis, BleConstants.ManufacturerNameUuid, "Manufacturer Name", BleConstants.ManufacturerName);
+                        CreateReadOnlyCharacteristic(dis, BleConstants.ModelNumberUuid, "Model Number", BleConstants.DeviceModel);
+                        CreateReadOnlyCharacteristic(dis, BleConstants.FirmwareRevisionUuid, "Firmware Revision", BleConstants.FirmwareVersion);
+                        CreateReadOnlyCharacteristic(dis, BleConstants.SoftwareRevisionUuid, "Software Revision", BleConstants.FirmwareVersion);
+                        Debug.WriteLine("BLE: Device Information Service created (LEGO / Smart Brick / 2.29.2).");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"BLE: Failed to create DIS — {disResult.Error} (non-fatal)");
+                    }
+
+                    // Secondary LEGO service (3ff2 base) — bidirectional characteristic.
+                    GattServiceProviderResult secResult = GattServiceProvider.Create(BleConstants.LegoSecondaryServiceUuid);
+                    if (secResult.Error == BluetoothError.Success)
+                    {
+                        GattLocalService secService = secResult.ServiceProvider.Service;
+                        CreateCharacteristic(
+                            secService,
+                            BleConstants.LegoBidirectionalUuid,
+                            "Bidirectional",
+                            GattCharacteristicProperties.WriteWithoutResponse | GattCharacteristicProperties.Notify);
+                        Debug.WriteLine("BLE: Secondary LEGO service (3ff2) created.");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"BLE: Failed to create secondary service — {secResult.Error} (non-fatal)");
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine("BLE: Extended services disabled (ESP32 heap-safe mode).");
+                }
 
                 // --- Start advertising (before hooking write events) ---
                 Debug.WriteLine("BLE: Starting advertising...");
@@ -137,6 +237,26 @@ namespace LegoSmartBrick.Ble
                 // show "Smart Brick" as the model (matches the real brick).
                 advParams.Advertisement.LocalName = BleConstants.DeviceName;
 
+                // FC96 service data — only on extended mode (needs space in
+                // the 31-byte legacy advertisement payload).
+                if (extendedServices)
+                {
+                    DataWriter fc96Writer = new();
+                    fc96Writer.WriteByte(0x96); // FC96 UUID low byte
+                    fc96Writer.WriteByte(0xFC); // FC96 UUID high byte
+                    fc96Writer.WriteByte(0x05);
+                    fc96Writer.WriteByte(0x01);
+                    fc96Writer.WriteByte(0x00);
+                    fc96Writer.WriteByte(0x20);
+                    fc96Writer.WriteByte(0x01);
+                    fc96Writer.WriteByte(0x05);
+                    advParams.Advertisement.DataSections.Add(
+                        new BluetoothLEAdvertisementDataSection(
+                            (byte)BluetoothLEAdvertisementDataSectionType.ServiceData16bitUuid,
+                            fc96Writer.DetachBuffer()));
+                    Debug.WriteLine("BLE: FC96 service data added to advertisement.");
+                }
+
                 _serviceProvider.StartAdvertising(advParams);
 
                 Debug.WriteLine("BLE: Advertising as \"Smart Brick\" with WDX service UUID 0xFEF6.");
@@ -151,6 +271,14 @@ namespace LegoSmartBrick.Ble
                 _ftcCharacteristic.WriteRequested += OnFtcWriteRequested;
                 _ftdCharacteristic.WriteRequested += OnFtdWriteRequested;
                 _auCharacteristic.WriteRequested += OnAuWriteRequested;
+
+                // On boards with more BLE heap, send file list metadata
+                // when clients subscribe to FTC/FTD — matches real brick.
+                if (extendedServices)
+                {
+                    _ftcCharacteristic.SubscribedClientsChanged += OnFtcSubscribedClientsChanged;
+                    _ftdCharacteristic.SubscribedClientsChanged += OnFtdSubscribedClientsChanged;
+                }
 
                 Debug.WriteLine("BLE: Write handlers registered.");
                 Debug.WriteLine("");
@@ -175,12 +303,20 @@ namespace LegoSmartBrick.Ble
             GattLocalService service,
             Guid uuid,
             string description,
-            GattCharacteristicProperties properties)
+            GattCharacteristicProperties properties,
+            byte[] staticValue = null)
         {
-            // Provide an empty StaticValue — the working LegoBluetooth repo
-            // always sets one; without it the native BLE stack may crash.
             DataWriter sw = new();
-            sw.WriteByte(0);
+            if (staticValue != null)
+            {
+                sw.WriteBytes(staticValue);
+            }
+            else
+            {
+                // Default: single zero byte. The LegoBluetooth repo always sets
+                // a StaticValue; without it the native BLE stack may crash.
+                sw.WriteByte(0);
+            }
 
             GattLocalCharacteristicParameters parms = new()
             {
@@ -250,7 +386,109 @@ namespace LegoSmartBrick.Ble
                 writer.WriteByte(0x03);     // format
 
                 _dcCharacteristic.NotifyValue(writer.DetachBuffer());
+
+                // Extended mode: also send battery level UPDATE
+                if (_extendedServices)
+                {
+                    Thread.Sleep(50);
+                    DataWriter batWriter = new();
+                    batWriter.WriteByte(BleConstants.DcOpUpdate);
+                    batWriter.WriteByte(BleConstants.DcIdBatteryLevel);
+                    batWriter.WriteByte(WdxRegisters.BatteryLevel);
+                    _dcCharacteristic.NotifyValue(batWriter.DetachBuffer());
+                    Debug.WriteLine($"BLE DC: Sent unsolicited BatteryLevel UPDATE → {WdxRegisters.BatteryLevel}%");
+                }
             }
+        }
+
+        // ---------------------------------------------------------------
+        //  FTC/FTD subscription handlers — file list metadata
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// When a client subscribes to FTC notifications, send the WDX file
+        /// list response header — matching the real LEGO Smart Brick.
+        /// </summary>
+        private static void OnFtcSubscribedClientsChanged(GattLocalCharacteristic sender, object args)
+        {
+            if (sender.SubscribedClients.Length > 0)
+            {
+                Debug.WriteLine("BLE FTC: Client subscribed — sending file list header");
+                DataWriter writer = new();
+                writer.WriteByte(0x06); // File list response opcode
+                writer.WriteByte(0x03); // Number of files
+                writer.WriteByte(0x00);
+                writer.WriteByte(0x00);
+                _ftcCharacteristic.NotifyValue(writer.DetachBuffer());
+            }
+        }
+
+        /// <summary>
+        /// When a client subscribes to FTD notifications, send the WDX file
+        /// list data — matching the real LEGO Smart Brick. The file list
+        /// contains entries for Firmware, FaultLog, and Telemetry files.
+        /// </summary>
+        private static void OnFtdSubscribedClientsChanged(GattLocalCharacteristic sender, object args)
+        {
+            if (sender.SubscribedClients.Length > 0)
+            {
+                Debug.WriteLine("BLE FTD: Client subscribed — sending WDX file list");
+                byte[] fileList = BuildWdxFileList();
+                DataWriter writer = new();
+                writer.WriteBytes(fileList);
+                _ftdCharacteristic.NotifyValue(writer.DetachBuffer());
+            }
+        }
+
+        /// <summary>
+        /// Builds the WDX file list matching the real LEGO Smart Brick.
+        /// Format: 8-byte header + N × 40-byte entries.
+        /// Each entry: handle(2) + type(1) + perms(1) + size(4) + name(16) + version(16).
+        /// </summary>
+        private static byte[] BuildWdxFileList()
+        {
+            // 8-byte header + 3 × 40-byte entries = 128 bytes
+            byte[] list = new byte[128];
+
+            // Header (observed from real brick)
+            list[0] = 0x00;
+            list[1] = 0x01;
+            list[2] = 0x03; // 3 files
+            // bytes 3-7 remain 0x00
+
+            // Entry 1: Firmware (handle=1, type=0, perms=2, size=0x000FFFFC ≈ 1MB)
+            WriteFileEntry(list, 8, 0x01, 0x00, 0x02, 0x000FFFFC, "Firmware", "1.0");
+
+            // Entry 2: FaultLog (handle=2, type=0, perms=5, size=0)
+            WriteFileEntry(list, 48, 0x02, 0x00, 0x05, 0x00000000, "FaultLog", "1.0");
+
+            // Entry 3: Telemetry (handle=3, type=0, perms=5, size=0)
+            WriteFileEntry(list, 88, 0x03, 0x00, 0x05, 0x00000000, "Telemetry", "1.0");
+
+            return list;
+        }
+
+        /// <summary>
+        /// Writes a single WDX file list entry at the given offset.
+        /// </summary>
+        private static void WriteFileEntry(byte[] buf, int offset, byte handle, byte type, byte perms, uint size, string name, string version)
+        {
+            buf[offset] = handle;
+            buf[offset + 1] = 0x00; // handle high byte
+            buf[offset + 2] = type;
+            buf[offset + 3] = perms;
+            buf[offset + 4] = (byte)(size);
+            buf[offset + 5] = (byte)(size >> 8);
+            buf[offset + 6] = (byte)(size >> 16);
+            buf[offset + 7] = (byte)(size >> 24);
+
+            byte[] nameBytes = System.Text.Encoding.UTF8.GetBytes(name);
+            int copyLen = nameBytes.Length < 16 ? nameBytes.Length : 16;
+            Array.Copy(nameBytes, 0, buf, offset + 8, copyLen);
+
+            byte[] verBytes = System.Text.Encoding.UTF8.GetBytes(version);
+            copyLen = verBytes.Length < 16 ? verBytes.Length : 16;
+            Array.Copy(verBytes, 0, buf, offset + 24, copyLen);
         }
 
         // ---------------------------------------------------------------

@@ -12,6 +12,14 @@ namespace LegoSmartBrick.Ble
         // (developer mode). When false, all auth attempts are rejected (secure default).
         private const bool BypassEcdsaAuth = true;
 
+        // Set to true on boards with more BLE heap (e.g. ESP32-S3) to enable
+        // additional GATT services and advertisement data that exceed the
+        // ESP32 WROOM-32's BLE heap limits:
+        //   - Device Information Service (0x180A) with LEGO values
+        //   - Secondary LEGO service (3ff2) with bidirectional characteristic
+        //   - FC96 service data in advertisement
+        private const bool EnableExtendedServices = true;
+
         // Battery simulation: starts at stored level (or 20% if none),
         // charges 1% every ChargeIntervalMs until 100%.
         private const int ChargeIntervalMs = 30_000; // 30 seconds per 1%
@@ -35,7 +43,7 @@ namespace LegoSmartBrick.Ble
 
             WdxRegisters.BypassEcdsaAuth = BypassEcdsaAuth;
 
-            if (BluetoothService.Init())
+            if (BluetoothService.Init(EnableExtendedServices))
             {
                 // Force GC and compact heap after all BLE init allocations
                 uint freeBytes = nanoFramework.Runtime.Native.GC.Run(true);

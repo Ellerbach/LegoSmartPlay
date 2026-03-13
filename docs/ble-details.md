@@ -42,6 +42,8 @@ The real brick exposes the standard BLE SIG Device Information Service with read
 These are standard GATT reads — plain UTF-8 strings, no null terminator, no padding. The Device Name (`0x2A00`) comes from the Generic Access service (`0x1800`), which is managed automatically by the BLE stack.
 
 > **ESP32 limitation:** Creating a custom DIS (second `GattServiceProvider` with 4 characteristics) exceeds the ESP32 WROOM-32's BLE heap, causing OOM crashes and making the device invisible. The nanoFramework stack auto-creates a default DIS with values `nanoFramework` / `ESP32`. The LEGO companion app reads manufacturer and model info from DC registers (`0x21`, `0x8A`) instead, which are correctly implemented.
+>
+> **ESP32-S3 extended mode:** On boards with more BLE heap (ESP32-S3), the `EnableExtendedServices` flag creates a custom DIS with correct LEGO values, the secondary LEGO service, FC96 advertisement data, and readable WDX characteristic values.
 
 ### Primary Service — WDX (FEF6)
 
@@ -54,6 +56,17 @@ The main GATT service is advertised with the 16-bit UUID `0xFEF6` but internally
 | File Transfer Data (FTD) | `005f0004-2ff2-…` | WriteNoResponse, Notify | OTA update bulk data |
 | Authentication (AU) | `005f0005-2ff2-…` | Write, Notify | ECDSA P-256 challenge/response |
 
+> **Extended mode (ESP32-S3):** When `EnableExtendedServices = true`, all four characteristics also gain the **Read** property and carry pre-populated static values matching the real brick:
+>
+> | Characteristic | Read value | Description |
+> | --- | --- | --- |
+> | DC | `03 20 XX` | UPDATE BatteryLevel |
+> | FTC | `06 03 00 00` | File list response header (3 files) |
+> | FTD | 128 bytes | WDX file list: Firmware, FaultLog, Telemetry entries |
+> | AU | `00` | No active auth session |
+>
+> FTC and FTD also send the file list data as **unsolicited notifications** when a client subscribes.
+
 ### Secondary Service — LEGO Custom (3ff2 base)
 
 A second service with a different UUID base is used for bidirectional command exchange:
@@ -63,6 +76,8 @@ A second service with a different UUID base is used for bidirectional command ex
 | Bidirectional | `005f000a-3ff2-4ed5-b045-4c7463617865` | WriteNoResponse, Notify | Command/data channel |
 
 The secondary service UUID is `005f0001-3ff2-4ed5-b045-4c7463617865`. This service is discovered by the app after connecting (it is not in the advertisement). Its exact protocol is not yet documented — the [node-smartplay](https://github.com/nathankellenicki/node-smartplay) project subscribes to its notifications during the handshake. And we haven't seen any communication with it during the manual tests.
+
+> **ESP32-S3 extended mode:** The secondary service is created with the bidirectional characteristic when `EnableExtendedServices = true`. On ESP32 WROOM-32, it is omitted to conserve BLE heap.
 
 ---
 
