@@ -219,6 +219,18 @@ namespace LegoSmartBrick.Ble
         public const byte DcIdUserVolume = 0x81;
 
         /// <summary>
+        /// Current write offset (GET). 4 bytes (uint32).
+        /// Used during WDX file transfers to track progress. Returns 0 when idle.
+        /// </summary>
+        public const byte DcIdCurrentWriteOffset = 0x82;
+
+        /// <summary>
+        /// Hardware revision (GET). Null-terminated string.
+        /// Exposes the hardware version (e.g. "0.72.33").
+        /// </summary>
+        public const byte DcIdHardwareRev = 0x83;
+
+        /// <summary>
         /// Primary MAC address (GET). 6 bytes.
         /// The LEGO app reads the BLE MAC address from this register.
         /// </summary>
@@ -237,9 +249,27 @@ namespace LegoSmartBrick.Ble
         public const byte DcIdSignedCommandNonce = 0x86;
 
         /// <summary>
+        /// Signed command (SET). Variable-length signed command blob.
+        /// Requires LEGO backend private key — stub accepts and logs.
+        /// </summary>
+        public const byte DcIdSignedCommand = 0x87;
+
+        /// <summary>
         /// Update state (GET). Single byte.
         /// </summary>
         public const byte DcIdUpdateState = 0x88;
+
+        /// <summary>
+        /// Pipeline stage (GET). Single byte OTA progress indicator.
+        /// 0x00 = Idle.
+        /// </summary>
+        public const byte DcIdPipelineStage = 0x89;
+
+        /// <summary>
+        /// Manufacturer name (GET). Null-terminated UTF-8 string.
+        /// Returns "LEGO" — supplements ModelNumber (0x21) since DIS is removed.
+        /// </summary>
+        public const byte DcIdManufacturerName = 0x8A;
 
         /// <summary>
         /// UX signal / keepalive (SET). The app writes [0xEA, 0x00] periodically
@@ -254,10 +284,33 @@ namespace LegoSmartBrick.Ble
         public const byte DcIdOwnershipProof = 0x91;
 
         /// <summary>
+        /// Battery type (GET). Single byte.
+        /// 0x00 = Normal, 0x01 = Rechargeable.
+        /// </summary>
+        public const byte DcIdBatteryType = 0x92;
+
+        /// <summary>
         /// Charging state (GET). Single byte, polled continuously.
         /// 0x00 = not charging.
         /// </summary>
         public const byte DcIdChargingState = 0x93;
+
+        /// <summary>
+        /// Battery charging voltage present (GET). Single byte.
+        /// 0x00 = no charging voltage, 0x01 = charging voltage detected.
+        /// </summary>
+        public const byte DcIdChargingVoltagePresent = 0x94;
+
+        /// <summary>
+        /// Factory reset (SET only). Writing triggers a factory reset (no-op stub).
+        /// </summary>
+        public const byte DcIdFactoryReset = 0x95;
+
+        /// <summary>
+        /// Travel mode (GET/SET). Single byte.
+        /// 0x00 = off, 0x01 = on (low-power shipping mode).
+        /// </summary>
+        public const byte DcIdTravelMode = 0x96;
 
         // ---------------------------------------------------------------
         //  DC register lengths

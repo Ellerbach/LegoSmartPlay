@@ -17,14 +17,19 @@ The brick advertises with the following data:
 | Flags | General Discoverable, BR/EDR Not Supported |
 | Company ID | `0x0397` (LEGO Systems A/S, Bluetooth SIG registered) |
 | Manufacturer Data | 6 bytes: `[ButtonState, SystemType, Capabilities, LastNetwork, Status, Option]` |
+| Service Data (FC96) | 6 bytes: `05 01 00 20 01 05` — additional 16-bit service UUID data (purpose TBD) |
 
 The `SystemType` byte is `0x60`, which identifies the device as a SMART Brick. The manufacturer data is populated from the Cordio stack and includes button state and device capability flags.
+
+The `FC96` service data is a 16-bit service UUID (`0xFC96`) with 6 bytes of associated data. This is present in the real brick's advertisement but its exact purpose is not yet documented. The data bytes `05 01 00 20 01 05` appear constant across observed advertisements.
+
+> **ESP32 implementation note:** The FC96 service data is not included in the ESP32 advertisement due to the 31-byte BLE legacy advertisement limit. Adding it alongside the existing Flags + LocalName + FEF6 UUID + ManufacturerData exceeds the limit, causing the BLE stack to drop sections or crash the LEGO app. The real brick likely uses extended advertising or a different packet layout.
 
 ## GATT Services
 
 ### Device Information Service (0x180A)
 
-The brick exposes the standard BLE SIG Device Information Service with read-only characteristics:
+The real brick exposes the standard BLE SIG Device Information Service with read-only characteristics:
 
 | Characteristic | UUID | Value (from real brick) |
 | --- | --- | --- |
@@ -35,6 +40,8 @@ The brick exposes the standard BLE SIG Device Information Service with read-only
 | Software Revision | `0x2A28` | `2.29.2` (same as firmware) |
 
 These are standard GATT reads — plain UTF-8 strings, no null terminator, no padding. The Device Name (`0x2A00`) comes from the Generic Access service (`0x1800`), which is managed automatically by the BLE stack.
+
+> **ESP32 limitation:** Creating a custom DIS (second `GattServiceProvider` with 4 characteristics) exceeds the ESP32 WROOM-32's BLE heap, causing OOM crashes and making the device invisible. The nanoFramework stack auto-creates a default DIS with values `nanoFramework` / `ESP32`. The LEGO companion app reads manufacturer and model info from DC registers (`0x21`, `0x8A`) instead, which are correctly implemented.
 
 ### Primary Service — WDX (FEF6)
 
@@ -136,18 +143,22 @@ These registers are LEGO-specific extensions, identified through firmware disass
 | --- | --- | --- | --- | --- | --- |
 | HubLocalName | `0x80` | GET/SET | ≤18 B | UTF-8, null-terminated | User-configurable device name (max 12 chars + null) |
 | UserVolume | `0x81` | GET/SET | 1 B | `uint8` (0–100) | Volume as percentage |
-| CurrentWriteOffset | `0x82` | GET | 4 B | `uint32 LE` | Current OTA write offset |
+| CurrentWriteOffset | `0x82` | GET | 4 B | `uint32 LE` | Current OTA write offset (0 when idle) |
+| HardwareRev | `0x83` | GET | variable | UTF-8, null-terminated | Hardware revision (e.g. `"0.72.33\0"`) |
 | PrimaryMacAddress | `0x84` | GET | 6 B | Big-endian bytes | Primary BLE MAC address |
 | UpgradeState | `0x85` | GET | 1 B | `uint8` | OTA upgrade state (0=Ready, 1=InProgress, 2=LowBattery) |
 | SignedCommandNonce | `0x86` | GET | 16 B | Random bytes | Fresh 16-byte nonce for ownership/signing |
-| SignedCommand | `0x87` | SET | variable | — | Signed command payload |
+| SignedCommand | `0x87` | SET | variable | — | Signed command payload (requires backend key) |
 | UpdateState | `0x88` | GET | 1 B | `uint8` | Firmware update state |
-| PipelineStage | `0x89` | GET | 1 B | `uint8` | OTA pipeline stage |
+| PipelineStage | `0x89` | GET | 1 B | `uint8` | OTA pipeline stage (0=Idle) |
+| ManufacturerName | `0x8A` | GET | variable | UTF-8, null-terminated | Manufacturer name (`"LEGO\0"`) |
 | UXSignal | `0x90` | SET | 2 B | `[0xEA, 0x00]` | Keepalive / heartbeat (app writes periodically) |
 | OwnershipProof | `0x91` | SET | 23 B | `[type:1, nonce:16, mac:6]` | Ownership claim payload |
+| BatteryType | `0x92` | GET | 1 B | `uint8` | Battery type (0=Normal, 1=Rechargeable) |
 | ChargingState | `0x93` | GET | 1 B | `uint8` | Charging state (0=not charging) |
+| ChargingVoltagePresent | `0x94` | GET | 1 B | `uint8` | Charging voltage detected (0=no, 1=yes) |
 | FactoryReset | `0x95` | SET | variable | — | Trigger factory reset (authenticated) |
-| TravelMode | `0x96` | GET/SET | 1 B | `uint8` | Travel mode toggle |
+| TravelMode | `0x96` | GET/SET | 1 B | `uint8` | Travel mode (0=off, 1=on — low-power shipping mode) |
 
 ---
 
@@ -254,7 +265,7 @@ The LEGO companion app follows a specific connection sequence (observed from BLE
 2. Service discovery → find DC, FTC, FTD, AU characteristics
 3. Subscribe to DC notifications (CCCD)
 4. DC GET ModelNumber     (0x21)  → "Smart Brick"
-5. DC GET FirmwareRev     (0x22)  → "0.72.33"
+5. DC GET FirmwareRev     (0x22)  → "2.29.2"
 6. DC GET UserVolume      (0x81)  → percentage (0-100)
 7. DC GET PrimaryMacAddress (0x84) → 6-byte MAC
 8. DC GET HubLocalName    (0x80)  → user-set name

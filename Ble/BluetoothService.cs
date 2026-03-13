@@ -100,9 +100,11 @@ namespace LegoSmartBrick.Ble
 
                 Debug.WriteLine("BLE: WDX service created with DC, FTC, FTD, AU characteristics.");
 
-                // NOTE: Secondary LEGO service (3ff2) and Device Information Service
-                // (0x180A) removed to stay within ESP32 BLE heap limits.
-                // The app reads model/manufacturer/firmware from DC registers instead.
+                // NOTE: Device Information Service (0x180A) removed — adding a
+                // second GattServiceProvider with 4 characteristics exceeds the
+                // ESP32 BLE heap and causes OOM / invisible advertisement.
+                // The nanoFramework default DIS ("nanoFramework"/"ESP32") remains.
+                // The LEGO app reads model/manufacturer/firmware from DC registers.
 
                 // --- Start advertising (before hooking write events) ---
                 Debug.WriteLine("BLE: Starting advertising...");
@@ -198,6 +200,30 @@ namespace LegoSmartBrick.Ble
 
             Debug.WriteLine($"BLE: Created {description} characteristic ({uuid}).");
             return result.Characteristic;
+        }
+
+        /// <summary>
+        /// Creates a read-only GATT characteristic with a static string value
+        /// for the Device Information Service.
+        /// </summary>
+        private static void CreateReadOnlyCharacteristic(GattLocalService service, Guid uuid, string description, string value)
+        {
+            DataWriter dw = new();
+            byte[] valueBytes = System.Text.Encoding.UTF8.GetBytes(value);
+            dw.WriteBytes(valueBytes);
+
+            GattLocalCharacteristicParameters parms = new()
+            {
+                CharacteristicProperties = GattCharacteristicProperties.Read,
+                UserDescription = description,
+                StaticValue = dw.DetachBuffer()
+            };
+
+            GattLocalCharacteristicResult result = service.CreateCharacteristic(uuid, parms);
+            if (result.Error != BluetoothError.Success)
+            {
+                Debug.WriteLine($"BLE: Failed to create DIS {description} — {result.Error}");
+            }
         }
 
         // ---------------------------------------------------------------

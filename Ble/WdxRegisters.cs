@@ -74,6 +74,9 @@ namespace LegoSmartBrick.Ble
         /// <summary>Whether the connected client has claimed ownership.</summary>
         public static bool OwnershipClaimed { get; set; } = false;
 
+        /// <summary>Travel mode state. 0 = off, 1 = on.</summary>
+        public static byte TravelMode { get; set; } = 0;
+
         /// <summary>
         /// Last generated 16-byte nonce for signed command / ownership proof.
         /// </summary>
@@ -237,6 +240,41 @@ namespace LegoSmartBrick.Ble
                     Debug.WriteLine("  DC GET UpgradeState → 0x00 (Ready)");
                     return true;
 
+                case BleConstants.DcIdHardwareRev:
+                    WriteNullTermString(writer, BleConstants.HardwareVersion);
+                    Debug.WriteLine($"  DC GET HardwareRev → \"{BleConstants.HardwareVersion}\"");
+                    return true;
+
+                case BleConstants.DcIdCurrentWriteOffset:
+                    writer.WriteUInt32(0x00000000);
+                    Debug.WriteLine("  DC GET CurrentWriteOffset → 0");
+                    return true;
+
+                case BleConstants.DcIdPipelineStage:
+                    writer.WriteByte(0x00); // 0x00 = Idle
+                    Debug.WriteLine("  DC GET PipelineStage → 0x00 (Idle)");
+                    return true;
+
+                case BleConstants.DcIdManufacturerName:
+                    WriteNullTermString(writer, BleConstants.ManufacturerName);
+                    Debug.WriteLine($"  DC GET ManufacturerName → \"{BleConstants.ManufacturerName}\"");
+                    return true;
+
+                case BleConstants.DcIdBatteryType:
+                    writer.WriteByte(0x01); // 0x01 = Rechargeable
+                    Debug.WriteLine("  DC GET BatteryType → 0x01 (Rechargeable)");
+                    return true;
+
+                case BleConstants.DcIdChargingVoltagePresent:
+                    writer.WriteByte(0x00); // 0x00 = no charging voltage detected
+                    Debug.WriteLine("  DC GET ChargingVoltagePresent → 0x00");
+                    return true;
+
+                case BleConstants.DcIdTravelMode:
+                    writer.WriteByte(TravelMode);
+                    Debug.WriteLine($"  DC GET TravelMode → 0x{TravelMode:X2}");
+                    return true;
+
                 default:
                     Debug.WriteLine($"  DC GET unknown register 0x{registerId:X2}");
                     return false;
@@ -361,6 +399,24 @@ namespace LegoSmartBrick.Ble
 
                 case BleConstants.DcIdClearConfig:
                     Debug.WriteLine("  DC SET ClearConfig — acknowledged (no-op)");
+                    return true;
+
+                case BleConstants.DcIdSignedCommand:
+                    {
+                        Debug.WriteLine($"  DC SET SignedCommand ({length} bytes) — acknowledged (no backend key)");
+                    }
+                    return true;
+
+                case BleConstants.DcIdFactoryReset:
+                    Debug.WriteLine("  DC SET FactoryReset — acknowledged (no-op)");
+                    return true;
+
+                case BleConstants.DcIdTravelMode:
+                    if (length >= 1)
+                    {
+                        TravelMode = data[offset];
+                        Debug.WriteLine($"  DC SET TravelMode → 0x{TravelMode:X2}");
+                    }
                     return true;
 
                 case BleConstants.DcIdOwnershipProof:
