@@ -28,7 +28,8 @@ This project aims to replicate parts of that experience using commodity hardware
 - **Read NFC tags** — Detect and identify LEGO Smart Play bricks (ISO 15693 / NFC-V) using a PN5180 NFC reader, extract the Brick ID, and map it to a known piece or minifigure.
 - **Play sounds** — Play a unique sound effect when a tag is recognised, and trigger contextual sounds from colour detection.
 - **Read colours** — Integrate a colour sensor to detect brick colours, enabling colour-driven interactions during play.
-- **Understand the protocol** — Document the NFC card format and encryption used by LEGO Smart Play.
+- **Emulate the BLE interface** — Act as a LEGO Smart Brick over Bluetooth Low Energy, exposing the WDX GATT service so the companion app can connect, read status, and configure settings.
+- **Understand the protocol** — Document the NFC card format, BLE protocol, and security model used by LEGO Smart Play.
 
 ## How It Works
 
@@ -130,17 +131,46 @@ The NFC tags inside LEGO Smart Play bricks have been analysed in detail. Key fin
 | `0xA9` (169) | Darth Vader minifig | Set 75421 |
 | `0xAB` (171) | Emperor Palpatine minifig | node-smartplay |
 
-Full analysis: [docs/lego-smart-brick-nfc.md](docs/lego-smart-brick-nfc.md) — Annotated card dumps: [docs/carte-details.md](docs/carte-details.md)
+Full analysis: [docs/lego-smart-brick-nfc.md](docs/lego-smart-brick-nfc.md) — Annotated card dumps: [docs/carte-details.md](docs/carte-details.md) — BLE protocol: [docs/ble-details.md](docs/ble-details.md)
+
+## BLE — Emulating the Smart Brick
+
+The `Ble/` project turns an ESP32 into a BLE device that mimics the official LEGO SMART Brick. It advertises with the correct service UUID (`0xFEF6`), LEGO manufacturer data (`0x0397`), and implements the Packetcraft Cordio WDX register-based protocol.
+
+**What works:**
+
+- BLE advertising — the LEGO companion app sees and connects to the device.
+- Full DC register map — model, firmware version, MAC address, volume, battery, hub name, upgrade/charging state, and keepalive.
+- Volume and name changes persist to internal flash and survive reboots.
+- Simulated battery charging (starts at 20%, charges over time).
+- Authentication challenge/response (ECDSA P-256) is implemented with a developer bypass mode.
+- Ownership proof protocol is handled (nonce generation, claim acknowledgement).
+
+**What doesn't work (by design):**
+
+- **Ownership verification will always fail.** The LEGO app signs ownership proofs via LEGO's cloud backend (`p11.bilbo.lego.com`) using a private ECDSA key. Our brick cannot validate these signatures because we don't have the public key or verification logic — and LEGO's backend also validates the brick itself. This is a well-designed security boundary (see [BLE Protocol Details](docs/ble-details.md#ownership-proof--the-lego-security-model) for a full analysis).
+- OTA firmware updates (FTC/FTD characteristics are stubbed).
+- PAwR multi-brick communication (requires BLE 5.4).
+
+Full protocol documentation: [docs/ble-details.md](docs/ble-details.md)
 
 ## Project Structure
 
 ```text
 LegoSmartBrick/
-├── Brick/              .NET nanoFramework firmware (ESP32 + PN5180)
-│   └── Program.cs      Card detection, Brick ID lookup, debug output
+├── Brick/              .NET nanoFramework firmware (ESP32-C3 + PN5180 + sensors)
+│   └── Program.cs      NFC tag detection, colour sensing, MP3 playback
+├── Ble/                BLE-only firmware (ESP32 WROOM-32)
+│   ├── Program.cs      Entry point, battery simulation, settings loader
+│   ├── BluetoothService.cs  GATT server, WDX service, write handlers
+│   ├── BleConstants.cs      UUIDs, opcodes, register IDs
+│   ├── WdxRegisters.cs      Register map, GET/SET handlers
+│   └── BrickSettings.cs     Persistence to internal flash (I:\\)
 ├── docs/
+│   ├── ble-details.md        BLE protocol details, register map, security analysis
+│   ├── ble-support-plan.md   Implementation plan and phase tracking
 │   ├── lego-smart-brick-nfc.md   Full NFC card format analysis
-│   └── carte-details.md          Annotated raw card dumps (4 cards)
+│   └── carte-details.md     Annotated raw card dumps (4 cards)
 └── LegoSmartBrick.sln  Solution file
 ```
 
@@ -192,6 +222,7 @@ The Brick ID byte value is used directly as the track number in folder `01`. Nam
 | `/01/158.mp3` | `0x9E` | 158 | Princess Leia |
 | `/01/169.mp3` | `0xA9` | 169 | Darth Vader |
 | `/01/171.mp3` | `0xAB` | 171 | Emperor Palpatine |
+| `/99/253.mp3` | — | 253 | Red colour → Shooting |
 | `/99/254.mp3` | — | 254 | Green colour → Tools / repair |
 | `/99/255.mp3` | — | 255 | Blue colour → Water filling tank |
 
@@ -210,7 +241,7 @@ To add a sound for a new Brick ID, just place an MP3 file named with its decimal
 ## Acknowledgements
 
 - [Coffee & Fun LLC](https://www.coffeeandfun.com/blog/reverse-engineering-lego-smart-play-nfc-part-1/) — Reverse engineering blog post on LEGO Smart Play NFC tags (set 75423) with Flipper Zero dump files that contributed additional Brick IDs to this project.
-- [node-smartplay](https://github.com/nathankellenicki/node-smartplay) by Nathan Kellenicki — Extensive reverse engineering of the LEGO Smart Play system: firmware binary analysis (EM9305 ARC disassembly), hardware architecture (custom ASIC + EM9305 chipset), NFC tag format and security model, BLE protocol (WDX registers, ECDSA P-256 authentication), ROFS content system (play.bin PPL scripts, audio.bin synthesizer instructions, animation.bin LED patterns), PAwR multi-brick communication, and backend API (Bilbo). A major source for understanding the system's internal architecture.
+- [node-smartplay](https://github.com/nathankellenicki/node-smartplay) by Nathan Kellenicki — Extensive reverse engineering of the LEGO Smart Play system: firmware binary analysis (EM9305 ARC disassembly), hardware architecture (custom ASIC + EM9305 chipset), NFC tag format and security model, BLE protocol (WDX registers, ECDSA P-256 authentication, ownership proof), ROFS content system (play.bin PPL scripts, audio.bin synthesizer instructions, animation.bin LED patterns), PAwR multi-brick communication, and backend API (Bilbo). A major source for understanding the system's internal architecture — including the complete WDX register map and handshake sequence used in our BLE implementation.
 - [nanoFramework](https://github.com/nanoframework) — The .NET nanoFramework runtime and IoT device bindings (including PN5180 / ISO 15693 support).
 
 ## Disclaimer

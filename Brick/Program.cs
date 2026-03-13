@@ -20,15 +20,16 @@ namespace LegoSmartBrick.Brick
     public class Program
     {
         // Set to false to skip all PN5180 / NFC reader code (useful for testing other peripherals).
-        private const bool EnableNfc = true;
+        private const bool EnableNfc = false;
 
         // Set to false to skip YX5300 MP3 player initialisation.
-        private const bool EnableMp3 = true;
+        private const bool EnableMp3 = false;
 
         // ---------------------------------------------------------------
         //  Board selection — change this line to switch hardware config.
         // ---------------------------------------------------------------
-        private static readonly HardwareConfig Board = HardwareConfig.Esp32C3SuperMini;
+        //private static readonly HardwareConfig Board = HardwareConfig.Esp32C3SuperMini;
+        private static readonly HardwareConfig Board = HardwareConfig.Esp32Wroom32;
 
         // LEGO Smart Play card header constants.
         private const byte LegoHeaderFlags = 0x00;

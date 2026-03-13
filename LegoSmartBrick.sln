@@ -4,6 +4,8 @@ VisualStudioVersion = 17.0.32126.317
 MinimumVisualStudioVersion = 15.0.26124.0
 Project("{11A8DD76-328B-46DF-9F39-F559912D0360}") = "Brick", "Brick\Brick.nfproj", "{D4E5F6A1-B2C3-4D5E-6F7A-8B9C0D1E2F3A}"
 EndProject
+Project("{11A8DD76-328B-46DF-9F39-F559912D0360}") = "Ble", "Ble\Ble.nfproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -16,6 +18,10 @@ Global
 		{D4E5F6A1-B2C3-4D5E-6F7A-8B9C0D1E2F3A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D4E5F6A1-B2C3-4D5E-6F7A-8B9C0D1E2F3A}.Release|Any CPU.Build.0 = Release|Any CPU
 		{D4E5F6A1-B2C3-4D5E-6F7A-8B9C0D1E2F3A}.Release|Any CPU.Deploy.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
