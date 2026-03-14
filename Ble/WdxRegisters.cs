@@ -66,6 +66,7 @@ namespace LegoSmartBrick.Ble
         /// Derived from the ESP32 base MAC (WiFi MAC + 2 for BLE).
         /// </summary>
         public static byte[] MacAddress { get; set; } = new byte[] { 0x40, 0x91, 0x51, 0x8B, 0xA9, 0xD2 };
+        //public static byte[] MacAddress { get; set; } = new byte[] { 0x9C, 0x9A, 0xC0, 0x46, 0x06, 0x2F };
 
         // ---------------------------------------------------------------
         //  Ownership state
@@ -144,7 +145,8 @@ namespace LegoSmartBrick.Ble
                     return true;
 
                 case BleConstants.DcIdFirmwareRev:
-                    WriteNullTermString(writer, BleConstants.FirmwareVersion);
+                    // Real brick returns 16 bytes, null-padded (no separate terminator)
+                    WriteFixedString(writer, BleConstants.FirmwareVersion, BleConstants.DcLenFirmwareRev);
                     Debug.WriteLine($"  DC GET FirmwareRev → \"{BleConstants.FirmwareVersion}\"");
                     return true;
 
@@ -155,9 +157,9 @@ namespace LegoSmartBrick.Ble
                     return true;
 
                 case BleConstants.DcIdAttMtu:
-                    // Report default ATT MTU (23 bytes)
-                    writer.WriteUInt16(23);
-                    Debug.WriteLine("  DC GET AttMtu → 23");
+                    // Real brick reports ATT MTU = 244 (0x00F4)
+                    writer.WriteUInt16(244);
+                    Debug.WriteLine("  DC GET AttMtu → 244");
                     return true;
 
                 case BleConstants.DcIdConnParam:
@@ -175,11 +177,11 @@ namespace LegoSmartBrick.Ble
                     return true;
 
                 case BleConstants.DcIdPhy:
-                    // Report 1M PHY for TX, RX, and options
-                    writer.WriteByte(0x01); // TX PHY: 1M
-                    writer.WriteByte(0x01); // RX PHY: 1M
-                    writer.WriteByte(0x00); // options
-                    Debug.WriteLine("  DC GET Phy → 1M/1M");
+                    // Real brick returns 00 00 00 (no PHY selection reported)
+                    writer.WriteByte(0x00);
+                    writer.WriteByte(0x00);
+                    writer.WriteByte(0x00);
+                    Debug.WriteLine("  DC GET Phy → 00/00/00");
                     return true;
 
                 // --- Phase 3: unauthenticated status registers ----------
@@ -202,8 +204,8 @@ namespace LegoSmartBrick.Ble
                 // --- LEGO vendor-specific registers (0x80+) -----
 
                 case BleConstants.DcIdHubLocalName:
-                    // Null-terminated UTF-8 device name
-                    WriteNullTermString(writer, HubLocalName);
+                    // Real brick returns raw UTF-8 bytes, no null terminator
+                    writer.WriteBytes(System.Text.Encoding.UTF8.GetBytes(HubLocalName));
                     Debug.WriteLine($"  DC GET HubLocalName → \"{HubLocalName}\"");
                     return true;
 
@@ -218,21 +220,26 @@ namespace LegoSmartBrick.Ble
                     return true;
 
                 case BleConstants.DcIdChargingState:
-                    writer.WriteByte(0x00); // 0x00 = not charging
-                    Debug.WriteLine("  DC GET ChargingState → 0x00");
+                    writer.WriteByte(0xA1); // 0xA1 matches real brick (charging)
+                    Debug.WriteLine("  DC GET ChargingState → 0xA1");
                     return true;
 
                 case BleConstants.DcIdUpdateState:
-                    writer.WriteByte(0x00);
-                    Debug.WriteLine("  DC GET UpdateState → 0x00");
+                    byte[] updateState = new byte[] {
+                        0xD4, 0x3F, 0x4B, 0xCA, 0x4C, 0xD6, 0xEF, 0x99,
+                        0x72, 0xD7, 0xE7, 0xF3, 0x12, 0x28, 0xF6, 0xA6,
+                        0xC1, 0x1B, 0x71, 0xF9
+                    };
+                    writer.WriteBytes(updateState);
+                    Debug.WriteLine("  DC GET UpdateState → (20-byte hash)");
                     return true;
 
                 case BleConstants.DcIdSignedCommandNonce:
-                    // Generate a fresh 16-byte random nonce each time the app reads
-                    _commandNonce = new byte[16];
+                    // Real brick returns 8-byte nonce (not 16)
+                    _commandNonce = new byte[8];
                     new System.Random().NextBytes(_commandNonce);
                     writer.WriteBytes(_commandNonce);
-                    Debug.WriteLine($"  DC GET SignedCommandNonce → [{FormatHex(_commandNonce, 0, 16)}]");
+                    Debug.WriteLine($"  DC GET SignedCommandNonce → [{FormatHex(_commandNonce, 0, 8)}]");
                     return true;
 
                 case BleConstants.DcIdUpgradeState:
@@ -241,8 +248,10 @@ namespace LegoSmartBrick.Ble
                     return true;
 
                 case BleConstants.DcIdHardwareRev:
-                    WriteNullTermString(writer, BleConstants.HardwareVersion);
-                    Debug.WriteLine($"  DC GET HardwareRev → \"{BleConstants.HardwareVersion}\"");
+                    // Real brick returns 2 zero bytes
+                    writer.WriteByte(0x00);
+                    writer.WriteByte(0x00);
+                    Debug.WriteLine("  DC GET HardwareRev → 00 00");
                     return true;
 
                 case BleConstants.DcIdCurrentWriteOffset:
@@ -251,8 +260,8 @@ namespace LegoSmartBrick.Ble
                     return true;
 
                 case BleConstants.DcIdPipelineStage:
-                    writer.WriteByte(0x00); // 0x00 = Idle
-                    Debug.WriteLine("  DC GET PipelineStage → 0x00 (Idle)");
+                    writer.WriteByte(0x04); // 0x04 matches real LEGO Smart Brick
+                    Debug.WriteLine("  DC GET PipelineStage → 0x04");
                     return true;
 
                 case BleConstants.DcIdManufacturerName:
@@ -261,13 +270,13 @@ namespace LegoSmartBrick.Ble
                     return true;
 
                 case BleConstants.DcIdBatteryType:
-                    writer.WriteByte(0x01); // 0x01 = Rechargeable
-                    Debug.WriteLine("  DC GET BatteryType → 0x01 (Rechargeable)");
+                    writer.WriteByte(0x00); // 0x00 matches real brick
+                    Debug.WriteLine("  DC GET BatteryType → 0x00");
                     return true;
 
                 case BleConstants.DcIdChargingVoltagePresent:
-                    writer.WriteByte(0x00); // 0x00 = no charging voltage detected
-                    Debug.WriteLine("  DC GET ChargingVoltagePresent → 0x00");
+                    writer.WriteByte(0x04); // 0x04 matches real brick
+                    Debug.WriteLine("  DC GET ChargingVoltagePresent → 0x04");
                     return true;
 
                 case BleConstants.DcIdTravelMode:

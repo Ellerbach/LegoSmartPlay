@@ -164,7 +164,7 @@ These registers are LEGO-specific extensions, identified through firmware disass
 | UpgradeState | `0x85` | GET | 1 B | `uint8` | OTA upgrade state (0=Ready, 1=InProgress, 2=LowBattery) |
 | SignedCommandNonce | `0x86` | GET | 16 B | Random bytes | Fresh 16-byte nonce for ownership/signing |
 | SignedCommand | `0x87` | SET | variable | — | Signed command payload (requires backend key) |
-| UpdateState | `0x88` | GET | 1 B | `uint8` | Firmware update state |
+| UpdateState | `0x88` | GET | 20 B | `bytes` | Firmware image hash (SHA-1) |
 | PipelineStage | `0x89` | GET | 1 B | `uint8` | OTA pipeline stage (0=Idle) |
 | ManufacturerName | `0x8A` | GET | variable | UTF-8, null-terminated | Manufacturer name (`"LEGO\0"`) |
 | UXSignal | `0x90` | SET | 2 B | `[0xEA, 0x00]` | Keepalive / heartbeat (app writes periodically) |
@@ -307,6 +307,56 @@ This implementation stores the following values to ESP32 internal flash (`I:\bri
 | Battery level | `I:\brick\bat.txt` | Decimal string (0–100) | Yes → `WdxRegisters.BatteryLevel` |
 
 Battery level is simulated: it starts at 20% on first boot and increases by 1% every 30 seconds, simulating a charge cycle. The level is persisted so it survives reboots.
+
+---
+
+## MAC Address Spoofing — Impersonating a Registered Brick
+
+It is possible to temporarily impersonate a real LEGO Smart Brick that has already been registered in the companion app by spoofing the MAC address reported via the DC registers (`MacAddress` 0x32 and `PrimaryMacAddress` 0x84).
+
+### Procedure
+
+1. **Register a real brick** with the LEGO companion app in the normal way.
+2. **Set the prototype's MAC address** to match the real brick's address (update `WdxRegisters.MacAddress`).
+3. **Power off the real brick** and connect the app to the prototype.
+
+### Observed Behaviour
+
+With only the MAC address spoofed, the app initially recognises the prototype as the registered brick — it appears with the same name and settings — but disconnects shortly after, likely due to mismatched register values (firmware hash, PHY, pipeline stage, etc.).
+
+However, once the following registers are also matched to the real brick's values, the app **fully accepts the prototype** and enters its normal connected-state operational mode:
+
+| Register | ID | Value matched |
+| --- | --- | --- |
+| MacAddress | `0x32` | Real brick's 6-byte MAC |
+| PrimaryMacAddress | `0x84` | Same as above |
+| UpdateState | `0x88` | 20-byte firmware hash (SHA-1) |
+| PipelineStage | `0x89` | `0x04` |
+| CurrentPhy | `0x0A` | `00 00 00` |
+
+With these matched and the ownership proof bypass enabled, the app:
+
+1. Sends `OwnershipProof` — accepted by the bypass.
+2. Enters a **steady-state polling loop**, repeatedly reading `ChargingState` (0x93), `BatteryLevel` (0x20), and periodically `UpdateState` (0x88, firmware hash) to update the UI. The firmware hash is re-checked periodically to ensure the brick hasn't changed firmware mid-session.
+
+This confirms the app treats the prototype as the genuine registered brick and remains in its normal operational mode indefinitely.
+
+### Identity Verification Summary
+
+The app's post-connection identity checks that must pass for full acceptance are:
+
+1. **MAC address** (registers 0x32 / 0x84) — must match the registered brick.
+2. **Firmware hash** (register 0x88) — 20-byte SHA-1 identifying the expected firmware version.
+3. **Ownership proof** — the challenge/response exchange must succeed (bypassed in dev mode).
+
+Once these three checks pass, the app settles into steady-state monitoring without further identity validation.
+
+### Implications
+
+- The MAC address is the **primary identifier** the app uses for initial brick recognition when scanning and reconnecting to known devices.
+- Additional registers beyond the MAC are checked post-connection — likely `UpdateState` (0x88, firmware hash), `SignedCommandNonce` (0x86), and the ownership proof exchange. These form a deeper identity verification layer.
+- To extend the spoofing duration, all register responses would need to match the real brick exactly. This requires further reverse engineering of every register the app reads during the post-connection handshake.
+- This technique is useful as a **research tool** — by observing which register read causes the app to reject the prototype, you can identify which values are part of the identity/integrity check.
 
 ---
 
